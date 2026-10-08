@@ -1,3 +1,0 @@
-data_path: "data/sample/sample_data.csv"
-moderate_user_threshold: 1.0
-heavy_user_threshold: 3.0
