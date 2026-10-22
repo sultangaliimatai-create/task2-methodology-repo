@@ -49,3 +49,9 @@ task2-methodology-repo/
     ├── benchmark.py         # Synthetic survey data generation & PASS score calculation
     ├── process_data.py      # Log cleaning, warm-up filtering, and outlier detection
     └── visualize.py         # Publication-ready plots (Axes, CI, Colorblind-safe)
+
+# 1. Сборка контейнера
+docker build -t procrastination-study .
+
+# 2. Запуск контейнера с доступом к Jupyter Lab на порту 8888
+docker run -p 8888:8888 procrastination-study
