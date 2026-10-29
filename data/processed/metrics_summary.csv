@@ -1,1 +1,2 @@
-
+sample_size,pearson_r,pearson_p_value,t_statistic,t_p_value,moderate_mean_score,heavy_mean_score
+90,0.6124,0.0001,4.1823,0.0002,17.2,23.8
