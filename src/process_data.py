@@ -4,10 +4,7 @@ import pandas as pd
 import numpy as np
 
 def process_raw_logs(raw_file_path="data/raw/benchmark_run.jsonl"):
-    """
-    ШАГ 1: Парсинг JSONL, проверка Guardrail Metric (ошибки), 
-    фильтрация фазы прогрева и детекция выбросов методом 1.5x IQR.
-    """
+   
     if not os.path.exists(raw_file_path):
         raise FileNotFoundError(f"Файл {raw_file_path} не найден! Запустите сперва python src/benchmark.py")
 
