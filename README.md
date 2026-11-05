@@ -53,4 +53,5 @@ Install the required packages:
 python -m pip install -r requirements.txt
 python src/simulate_survey_data.py
 python src/process_data.py
-python src/visualize.py ```
+python src/visualize.py 
+```
