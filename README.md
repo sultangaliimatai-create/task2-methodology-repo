@@ -35,9 +35,9 @@ These results come from artificial data. The data-generation process deliberatel
 
 ## Figures
 
-![Video hours and simulated score](reports/figures/fig1_video_hours_vs_score.png)
+![Video hours and simulated score](reports/figures/video_hours_vs_score.png)
 
-![Simulated score distributions by viewing group](reports/figures/fig2_score_distribution_boxplot.png)
+![Simulated score distributions by viewing group](reports/figures/score_by_video_group.png)
 
 PDF versions of the figures are also available in `reports/figures/`.
 
