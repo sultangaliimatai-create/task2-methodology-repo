@@ -16,7 +16,7 @@ This project demonstrates a reproducible analysis workflow for the question: how
 - `src/visualize.py` — figure generation
 - `notebooks/01_data_analysis.ipynb` — analysis with visible outputs
 - `docs/domain_model.md` — domain model
-- `reports/task3_report.md` — detailed report
+- `report/task3_report.md` — detailed report
 - `reports/figures/` — PNG and PDF figures
 
 ## Results and discussion
@@ -51,3 +51,6 @@ Install the required packages:
 
 ```bash
 python -m pip install -r requirements.txt
+python src/simulate_survey_data.py
+python src/process_data.py
+python src/visualize.py
