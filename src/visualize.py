@@ -1,51 +1,145 @@
-import os
+"""Create publication-style figures from simulated survey data."""
+
+from pathlib import Path
+
 import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-def generate_publication_plots():
-    # Настройка единого научного стиля (Publication-ready)
-    sns.set_theme(style="whitegrid", font_scale=1.2)
-    palette = sns.color_palette("colorblind")
-    
-    os.makedirs("reports/figures", exist_ok=True)
-    
-    # Генерация синтетических данных для визуализации
-    np.random.seed(42)
-    n_samples = 100
-    hours = np.linspace(0, 6, n_samples)
-    scores = 15 + 2.5 * hours + np.random.normal(0, 2, n_samples)
-    
-    df = pd.DataFrame({"daily_video_hours": hours, "procrastination_score": scores})
 
-    # --- ГРАФИК 1: Зависимость прокрастинации от времени (Line Plot + 95% CI) ---
+ROOT = Path(__file__).resolve().parents[1]
+DATA_PATH = ROOT / "data" / "processed" / "cleaned_synthetic_students.csv"
+FIGURES_DIR = ROOT / "reports" / "figures"
+RNG = np.random.default_rng(42)
+
+
+def bootstrap_mean_ci(values, n_boot=2000):
+    """Calculate a percentile 95% bootstrap confidence interval."""
+    values = np.asarray(values, dtype=float)
+    samples = RNG.choice(values, size=(n_boot, len(values)), replace=True)
+    means = samples.mean(axis=1)
+    return np.quantile(means, [0.025, 0.975])
+
+
+def main():
+    data = pd.read_csv(DATA_PATH)
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Figure 1: viewing time and simulated score
+    x = data["daily_video_hours"].to_numpy()
+    y = data["simulated_procrastination_score"].to_numpy()
+    x_grid = np.linspace(x.min(), x.max(), 100)
+
+    slope, intercept = np.polyfit(x, y, 1)
+    fitted_line = slope * x_grid + intercept
+
+    boot_lines = []
+    for _ in range(1000):
+        indexes = RNG.choice(len(data), size=len(data), replace=True)
+        sample_x = x[indexes]
+        sample_y = y[indexes]
+
+        if np.unique(sample_x).size > 1:
+            sample_slope, sample_intercept = np.polyfit(sample_x, sample_y, 1)
+            boot_lines.append(sample_slope * x_grid + sample_intercept)
+
+    ci_low, ci_high = np.percentile(boot_lines, [2.5, 97.5], axis=0)
+
     fig, ax = plt.subplots(figsize=(8, 5))
-    
-    sns.regplot(
-        data=df,
-        x="daily_video_hours",
-        y="procrastination_score",
-        color=palette[0],
-        line_kws={"linestyle": "--", "linewidth": 2, "label": "Linear Fit ($r = 0.61$)"},
-        scatter_kws={"alpha": 0.6, "s": 40},
-        ax=ax
+    colors = {"No": "#0072B2", "Yes": "#D55E00"}
+
+    for answer, color in colors.items():
+        subset = data["during_study"] == answer
+        ax.scatter(
+            x[subset],
+            y[subset],
+            color=color,
+            label=f"During study: {answer}",
+            alpha=0.75,
+        )
+
+    ax.plot(x_grid, fitted_line, color="black", label="Fitted trend")
+    ax.fill_between(
+        x_grid,
+        ci_low,
+        ci_high,
+        color="gray",
+        alpha=0.25,
+        label="95% bootstrap interval",
     )
+    ax.set_title("Simulated video use and procrastination score")
+    ax.set_xlabel("Short-video use (hours per day)")
+    ax.set_ylabel("Simulated procrastination score (1–5)")
+    ax.legend()
+    ax.text(
+        0.02,
+        0.02,
+        "Simulation only — not real survey results",
+        transform=ax.transAxes,
+        fontsize=8,
+    )
+    fig.tight_layout()
+    fig.savefig(FIGURES_DIR / "video_hours_vs_score.png", dpi=300)
+    fig.savefig(FIGURES_DIR / "video_hours_vs_score.pdf")
+    plt.close(fig)
 
-    # Правило 1: Оси и масштабы с физическими единицами
-    ax.set_xlabel("Daily Short-Form Video Consumption (hours/day)", fontsize=12, fontweight='bold')
-    ax.set_ylabel("PASS Procrastination Score (points)", fontsize=12, fontweight='bold')
-    ax.set_ylim(bottom=0) # Zero baseline
-    ax.set_title("Academic Procrastination vs. Short-Form Video Usage", fontsize=14, pad=12)
-    ax.legend(loc="upper left")
+    # Figure 2: score distributions and group mean confidence intervals
+    group_names = [
+        "Baseline (<=1 h/day)",
+        "Middle (1-3 h/day)",
+        "Heavy (>3 h/day)",
+    ]
+    groups = [
+        data.loc[
+            data["consumption_group"] == name,
+            "simulated_procrastination_score",
+        ].dropna().to_numpy()
+        for name in group_names
+    ]
 
-    # Сохранение в двух форматах (.pdf для LaTeX, .png 300 DPI для GitHub)
-    plt.tight_layout()
-    plt.savefig("reports/figures/fig1_procrastination_trend.pdf", format="pdf", dpi=300)
-    plt.savefig("reports/figures/fig1_procrastination_trend.png", format="png", dpi=300)
-    plt.close()
-    
-    print("[+] График 1 успешно сохранен в reports/figures/")
+    fig, ax = plt.subplots(figsize=(8, 5))
+    boxplot = ax.boxplot(groups, patch_artist=True)
+
+    palette = ["#0072B2", "#E69F00", "#009E73"]
+    for box, color in zip(boxplot["boxes"], palette):
+        box.set_facecolor(color)
+        box.set_alpha(0.65)
+
+    means = [values.mean() for values in groups]
+    intervals = [bootstrap_mean_ci(values) for values in groups]
+    lower_errors = [mean - interval[0] for mean, interval in zip(means, intervals)]
+    upper_errors = [interval[1] - mean for mean, interval in zip(means, intervals)]
+
+    ax.errorbar(
+        [1, 2, 3],
+        means,
+        yerr=[lower_errors, upper_errors],
+        fmt="D",
+        color="black",
+        capsize=5,
+        label="Mean ± 95% bootstrap CI",
+    )
+    ax.set_xticks([1, 2, 3])
+    ax.set_xticklabels(group_names, rotation=10)
+    ax.set_title("Simulated scores by video-use group")
+    ax.set_xlabel("Short-video use group")
+    ax.set_ylabel("Simulated procrastination score (1–5)")
+    ax.legend()
+    ax.text(
+        0.02,
+        0.02,
+        "Simulation only — not real survey results",
+        transform=ax.transAxes,
+        fontsize=8,
+    )
+    fig.tight_layout()
+    fig.savefig(FIGURES_DIR / "score_by_video_group.png", dpi=300)
+    fig.savefig(FIGURES_DIR / "score_by_video_group.pdf")
+    plt.close(fig)
+
+    print("Figures saved as PNG (300 DPI) and PDF in reports/figures/")
+    print("Reminder: the figures use simulated data.")
+
 
 if __name__ == "__main__":
-    generate_publication_plots()
+    main()

@@ -1,54 +1,179 @@
-import os
+"""Clean and summarize simulated student survey data."""
+
 import json
-import pandas as pd
+from pathlib import Path
+
 import numpy as np
+import pandas as pd
+from scipy import stats
 
-def process_raw_logs(raw_file_path="data/raw/benchmark_run.jsonl"):
-   
-    if not os.path.exists(raw_file_path):
-        raise FileNotFoundError(f"Файл {raw_file_path} не найден! Запустите сперва python src/benchmark.py")
 
-    # 1. Загрузка и парсинг сырых логов JSONL
-    records = []
-    with open(raw_file_path, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line.strip()))
-    
-    df_raw = pd.DataFrame(records)
-    total_raw_count = len(df_raw)
-    print(f"[+] Успешно загружено записей из raw log: {total_raw_count}")
+ROOT = Path(__file__).resolve().parents[1]
+RAW_PATH = ROOT / "data" / "raw" / "synthetic_student_survey.jsonl"
+PROCESSED_DIR = ROOT / "data" / "processed"
 
-    # 2. Подсчет Guardrail Metric (Процент ошибок/сбоев для предотвращения Selection Bias)
-    if "status_code" in df_raw.columns:
-        error_mask = df_raw["status_code"] != 200
-    else:
-        error_mask = df_raw["pass_score"].isna() | (df_raw["daily_hours"] < 0)
 
-    error_count = int(error_mask.sum())
-    error_rate = (error_count / total_raw_count) * 100 if total_raw_count > 0 else 0.0
-    print(f"[+] Guardrail Metric — Error Rate: {error_rate:.2f}% ({error_count}/{total_raw_count})")
+def load_data():
+    with RAW_PATH.open("r", encoding="utf-8") as file:
+        records = [json.loads(line) for line in file if line.strip()]
+    return pd.DataFrame(records)
 
-    # 3. Фильтрация прогрева (Warm-up Filtering)
-    df_benchmark = df_raw[df_raw["phase"] == "benchmark"].copy()
-    warmup_count = total_raw_count - len(df_benchmark)
-    print(f"[+] Отфильтровано записей фазы 'warmup': {warmup_count} | Осталось рабочих: {len(df_benchmark)}")
 
-    # 4. Детекция выбросов методом Interquartile Range (1.5x IQR)
-    q1 = df_benchmark["pass_score"].quantile(0.25)
-    q3 = df_benchmark["pass_score"].quantile(0.75)
-    iqr = q3 - q1
-    lower_bound = q1 - 1.5 * iqr
-    upper_bound = q3 + 1.5 * iqr
+def process_data():
+    raw = load_data()
 
-    # Неразрушающая пометка выбросов флагом (без удаления реальных спайков нагрузки)
-    df_benchmark["is_outlier"] = (df_benchmark["pass_score"] < lower_bound) | (df_benchmark["pass_score"] > upper_bound)
-    outliers_found = int(df_benchmark["is_outlier"].sum())
-    print(f"[+] Выявлено аппаратных выбросов (IQR bounds [{lower_bound:.2f}, {upper_bound:.2f}]): {outliers_found}")
+    required = {
+        "student_id",
+        "daily_video_hours",
+        "during_study",
+        "study_year",
+        "simulated_procrastination_score",
+        "data_type",
+    }
 
-    return df_benchmark
+    missing = required - set(raw.columns)
+    if missing:
+        raise ValueError(f"Missing columns: {sorted(missing)}")
+
+    original_count = len(raw)
+    data = raw.drop_duplicates(subset="student_id").copy()
+
+    data["daily_video_hours"] = pd.to_numeric(
+        data["daily_video_hours"], errors="coerce"
+    )
+    data["simulated_procrastination_score"] = pd.to_numeric(
+        data["simulated_procrastination_score"], errors="coerce"
+    )
+
+    valid = (
+        data["daily_video_hours"].between(0, 24)
+        & data["simulated_procrastination_score"].between(1, 5)
+        & data["during_study"].isin(["Yes", "No"])
+    )
+    clean = data.loc[valid].copy()
+
+    clean["consumption_group"] = pd.cut(
+        clean["daily_video_hours"],
+        bins=[-np.inf, 1, 3, np.inf],
+        labels=["Baseline (<=1 h/day)", "Middle (1-3 h/day)", "Heavy (>3 h/day)"],
+    )
+
+    rows = [
+        {
+            "section": "data_quality",
+            "group": "all",
+            "metric": "records_loaded",
+            "value": original_count,
+        },
+        {
+            "section": "data_quality",
+            "group": "all",
+            "metric": "records_analyzed",
+            "value": len(clean),
+        },
+        {
+            "section": "data_quality",
+            "group": "all",
+            "metric": "duplicate_ids_removed",
+            "value": original_count - len(data),
+        },
+        {
+            "section": "data_quality",
+            "group": "all",
+            "metric": "invalid_records_removed",
+            "value": len(data) - len(clean),
+        },
+    ]
+
+    for group_name, group in clean.groupby("consumption_group", observed=True):
+        scores = group["simulated_procrastination_score"]
+        rows.extend(
+            [
+                {
+                    "section": "descriptive",
+                    "group": str(group_name),
+                    "metric": "n",
+                    "value": len(group),
+                },
+                {
+                    "section": "descriptive",
+                    "group": str(group_name),
+                    "metric": "mean_score",
+                    "value": scores.mean(),
+                },
+                {
+                    "section": "descriptive",
+                    "group": str(group_name),
+                    "metric": "median_score",
+                    "value": scores.median(),
+                },
+            ]
+        )
+
+    x = clean["daily_video_hours"]
+    y = clean["simulated_procrastination_score"]
+    correlation, correlation_p = stats.pearsonr(x, y)
+
+    rows.extend(
+        [
+            {
+                "section": "association",
+                "group": "all",
+                "metric": "pearson_r",
+                "value": correlation,
+            },
+            {
+                "section": "association",
+                "group": "all",
+                "metric": "pearson_p_value",
+                "value": correlation_p,
+            },
+        ]
+    )
+
+    baseline = clean.loc[
+        clean["daily_video_hours"] <= 1,
+        "simulated_procrastination_score",
+    ]
+    heavy = clean.loc[
+        clean["daily_video_hours"] > 3,
+        "simulated_procrastination_score",
+    ]
+
+    if len(baseline) >= 2 and len(heavy) >= 2:
+        t_stat, t_p = stats.ttest_ind(heavy, baseline, equal_var=False)
+        rows.extend(
+            [
+                {
+                    "section": "group_comparison",
+                    "group": "heavy_vs_baseline",
+                    "metric": "welch_t_statistic",
+                    "value": t_stat,
+                },
+                {
+                    "section": "group_comparison",
+                    "group": "heavy_vs_baseline",
+                    "metric": "welch_p_value",
+                    "value": t_p,
+                },
+            ]
+        )
+
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    clean.to_csv(
+        PROCESSED_DIR / "cleaned_synthetic_students.csv",
+        index=False,
+    )
+    pd.DataFrame(rows).to_csv(
+        PROCESSED_DIR / "metrics_summary.csv",
+        index=False,
+    )
+
+    print(f"Records loaded: {original_count}")
+    print(f"Records analyzed: {len(clean)}")
+    print("Summary saved to data/processed/metrics_summary.csv")
+    print("SIMULATION ONLY: these are not real student survey results.")
+
 
 if __name__ == "__main__":
-    df_clean = process_raw_logs()
-    print("\n--- Пример обработанных данных (первые 5 строк) ---")
-    print(df_clean.head())
+    process_data()
