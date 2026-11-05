@@ -1,26 +1,16 @@
-# Временные файлы Python и Jupyter
+# Python cache and compiled files
 __pycache__/
 *.py[cod]
+
+# Virtual environments and local settings
+.venv/
+venv/
+.env
+
+# Jupyter temporary files
 .ipynb_checkpoints/
 
-# Виртуальное окружение
-venv/
-.venv/
-env/
-
-# Защита сырых данных и логов от случайностей
-data/raw/*
-!data/raw/.gitkeep
-data/processed/*
-!data/processed/.gitkeep
+# Temporary files
 *.log
-*.jsonl
-
-# Веса и модели
-models/*
-!models/.gitkeep
-
-# Служебные файлы
-.vscode/
-.idea/
+*.tmp
 .DS_Store
