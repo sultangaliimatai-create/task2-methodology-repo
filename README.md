@@ -12,7 +12,7 @@
 ---
 
 ## 🔬 Project Overview & Research Aim
-This repository contains the methodology, benchmark testbed, data pipeline, and statistical validation scripts for analyzing the relationship between short-form video consumption (TikTok, Instagram Reels, YouTube Shorts) and academic procrastination among university students.
+That repository contains the methodology, benchmark testbed, data pipeline, and statistical validation scripts for analyzing the relationship between short-form video consumption (TikTok, Instagram Reels, YouTube Shorts) and academic procrastination among university students.
 
 ### Research Questions & Hypotheses
 * **RQ1 (Descriptive):** How common is academic procrastination, and how much time do students spend watching short videos?
